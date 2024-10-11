@@ -120,9 +120,9 @@ class PostgresSink(SQLSink):
         return f"{str(uuid.uuid4()).replace('-', '_')}"
 
     def generate_copy_statement(
-            self,
-            full_table_name: str | FullyQualifiedName,
-            columns: list[sa.Column],  # type: ignore[override]
+        self,
+        full_table_name: str | FullyQualifiedName,
+        columns: list[sa.Column],  # type: ignore[override]
     ) -> str:
         """Generate a copy statement for bulk copy.
 
