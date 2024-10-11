@@ -167,21 +167,21 @@ class PostgresSink(SQLSink):
     ) -> int | None:
         """Bulk insert records to an existing destination table.
 
-                The default implementation uses a generic SQLAlchemy bulk insert operation.
-                This method may optionally be overridden by developers in order to provide
-                faster, native bulk uploads.
+        The default implementation uses a generic SQLAlchemy bulk insert operation.
+        This method may optionally be overridden by developers in order to provide
+        faster, native bulk uploads.
 
-                Args:
-                    table: the target table object.
-                    schema: the JSON schema for the new table, to be used when inferring column
-                        names.
-                    records: the input records.
-                    primary_keys: the primary key columns for the table.
-                    connection: the database connection.
+        Args:
+            table: the target table object.
+            schema: the JSON schema for the new table, to be used when inferring column
+                names.
+            records: the input records.
+            primary_keys: the primary key columns for the table.
+            connection: the database connection.
 
-                Returns:
-                    True if table exists, False if not, None if unsure or undetectable.
-                """
+        Returns:
+            True if table exists, False if not, None if unsure or undetectable.
+        """
         columns = self.column_representation(schema)
         copy_statement: str = self.generate_copy_statement(table.name, columns)
         self.logger.info("Inserting with SQL: %s", copy_statement)
