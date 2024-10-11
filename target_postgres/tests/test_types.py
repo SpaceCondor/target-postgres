@@ -11,7 +11,6 @@ def connector():
     """Create a PostgresConnector instance."""
     return PostgresConnector(
         config={
-            "dialect+driver": "postgresql+psycopg2",
             "host": "localhost",
             "port": "5432",
             "user": "postgres",

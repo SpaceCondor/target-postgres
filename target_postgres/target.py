@@ -141,21 +141,10 @@ class TargetPostgres(SQLTarget):
             th.StringType,
             description=(
                 "SQLAlchemy connection string. "
-                + "This will override using host, user, password, port, "
-                + "dialect, and all ssl settings. Note that you must escape password "
+                + "This will override using host, user, password, port, and "
+                + "all ssl settings. Note that you must escape password "
                 + "special characters properly. See "
                 + "https://docs.sqlalchemy.org/en/20/core/engines.html#escaping-special-characters-such-as-signs-in-passwords"
-            ),
-        ),
-        th.Property(
-            "dialect+driver",
-            th.StringType,
-            default="postgresql+psycopg2",
-            description=(
-                "Dialect+driver see "
-                + "https://docs.sqlalchemy.org/en/20/core/engines.html. "
-                + "Generally just leave this alone. "
-                + "Note if sqlalchemy_url is set this will be ignored."
             ),
         ),
         th.Property(
@@ -204,6 +193,17 @@ class TargetPostgres(SQLTarget):
                 "schema to determine how to store the data. Using this option may "
                 "result in a more efficient storage of the data but may also result "
                 "in an error if the data is not encoded as expected."
+            ),
+        ),
+        th.Property(
+            "sanitize_null_text_characters",
+            th.BooleanType,
+            default=False,
+            description=(
+                "If set to true, the target will sanitize null characters in "
+                "char/text/varchar fields, as they are not supported by Postgres. "
+                "See [postgres documentation](https://www.postgresql.org/docs/current/functions-string.html) "  # noqa: E501
+                "for more information about chr(0) not being supported."
             ),
         ),
         th.Property(

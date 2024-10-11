@@ -97,6 +97,15 @@ class PostgresConnector(SQLConnector):
         """
         return self.config.get("interpret_content_encoding", False)
 
+    @cached_property
+    def sanitize_null_text_characters(self) -> bool:
+        """Whether to sanitize null text characters.
+
+        Returns:
+            True if the feature is enabled, False otherwise.
+        """
+        return self.config.get("sanitize_null_text_characters", False)
+
     def prepare_table(  # type: ignore[override]  # noqa: PLR0913
         self,
         full_table_name: str | FullyQualifiedName,
@@ -639,7 +648,7 @@ class PostgresConnector(SQLConnector):
             return cast(str, config["sqlalchemy_url"])
 
         sqlalchemy_url = URL.create(
-            drivername=config["dialect+driver"],
+            drivername="postgresql+psycopg",
             username=config["user"],
             password=config["password"],
             host=config["host"],

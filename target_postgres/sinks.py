@@ -119,6 +119,44 @@ class PostgresSink(SQLSink):
         # in postgres, used a guid just in case we are using the same session
         return f"{str(uuid.uuid4()).replace('-', '_')}"
 
+    def generate_copy_statement(
+            self,
+            full_table_name: str | FullyQualifiedName,
+            columns: list[sa.Column],  # type: ignore[override]
+    ) -> str:
+        """Generate a copy statement for bulk copy.
+
+        Args:
+            full_table_name: the target table name.
+            columns: the target table columns.
+
+        Returns:
+            A copy statement.
+        """
+        columns_list = ", ".join(f'"{column.name}"' for column in columns)
+        sql: str = f'COPY "{full_table_name}" ({columns_list}) FROM STDIN'
+
+        return sql
+
+    def sanitize_null_text_characters(self, data):
+        """Sanitizes null characters by replacing \u0000 with \ufffd."""
+
+        def replace_null_character(d):
+            return d.replace("\u0000", "\ufffd")
+
+        if isinstance(data, str):
+            data = replace_null_character(data)
+
+        elif isinstance(data, dict):
+            for k in data:
+                if isinstance(data[k], str):
+                    data[k] = replace_null_character(data[k])
+
+        elif isinstance(data, list):
+            for i in range(0, len(data)):
+                if isinstance(data[i], str):
+                    data[i] = replace_null_character(data[i])
+
     def bulk_insert_records(  # type: ignore[override]
         self,
         table: sa.Table,
@@ -129,51 +167,79 @@ class PostgresSink(SQLSink):
     ) -> int | None:
         """Bulk insert records to an existing destination table.
 
-        The default implementation uses a generic SQLAlchemy bulk insert operation.
-        This method may optionally be overridden by developers in order to provide
-        faster, native bulk uploads.
+                The default implementation uses a generic SQLAlchemy bulk insert operation.
+                This method may optionally be overridden by developers in order to provide
+                faster, native bulk uploads.
 
-        Args:
-            table: the target table object.
-            schema: the JSON schema for the new table, to be used when inferring column
-                names.
-            records: the input records.
-            primary_keys: the primary key columns for the table.
-            connection: the database connection.
+                Args:
+                    table: the target table object.
+                    schema: the JSON schema for the new table, to be used when inferring column
+                        names.
+                    records: the input records.
+                    primary_keys: the primary key columns for the table.
+                    connection: the database connection.
 
-        Returns:
-            True if table exists, False if not, None if unsure or undetectable.
-        """
+                Returns:
+                    True if table exists, False if not, None if unsure or undetectable.
+                """
         columns = self.column_representation(schema)
-        insert: str = t.cast(
-            str,
-            self.generate_insert_statement(
-                table.name,
-                columns,
-            ),
-        )
-        self.logger.info("Inserting with SQL: %s", insert)
-        # Only one record per PK, we want to take the last one
-        data_to_insert: list[dict[str, t.Any]] = []
+        copy_statement: str = self.generate_copy_statement(table.name, columns)
+        self.logger.info("Inserting with SQL: %s", copy_statement)
 
+        data_to_copy: list[dict[str, t.Any]] = []
+
+        # If append only is False, we only take the latest record one per primary key
         if self.append_only is False:
-            insert_records: dict[tuple, dict] = {}  # pk tuple: record
+            unique_copy_records: dict[tuple, dict] = {}  # pk tuple: values
             for record in records:
                 insert_record = {
-                    column.name: record.get(column.name) for column in columns
+                    column.name: (
+                        self.sanitize_null_text_characters(record.get(column.name))
+                        if self.connector.sanitize_null_text_characters
+                        else record.get(column.name)
+                    )
+                    for column in columns
                 }
                 # No need to check for a KeyError here because the SDK already
                 # guarantees that all key properties exist in the record.
                 primary_key_tuple = tuple(record[key] for key in primary_keys)
-                insert_records[primary_key_tuple] = insert_record
-            data_to_insert = list(insert_records.values())
+                unique_copy_records[primary_key_tuple] = insert_record
+            data_to_copy = list(unique_copy_records.values())
         else:
             for record in records:
                 insert_record = {
-                    column.name: record.get(column.name) for column in columns
+                    column.name: (
+                        self.sanitize_null_text_characters(record.get(column.name))
+                        if self.connector.sanitize_null_text_characters
+                        else record.get(column.name)
+                    )
+                    for column in columns
                 }
-                data_to_insert.append(insert_record)
-        connection.execute(insert, data_to_insert)
+                data_to_copy.append(insert_record)
+
+        # Use each column's bind_processor
+        column_bind_processors = {
+            column.name: column.type.bind_processor(connection.dialect)
+            for column in columns
+        }
+
+        # Use copy to run the copy statement.
+        # https://www.psycopg.org/psycopg3/docs/basic/copy.html
+        with connection.connection.cursor().copy(copy_statement) as copy:  # type: ignore[attr-defined]
+            for row in data_to_copy:
+                processed_row = []
+                for row_column_tuple in row:
+                    if column_bind_processors[row_column_tuple] is not None:
+                        processed_row.append(
+                            column_bind_processors[row_column_tuple](
+                                row[row_column_tuple]
+                            )
+                        )
+                    else:
+                        processed_row.append(row[row_column_tuple])
+
+                copy.write_row(processed_row)
+
         return True
 
     def upsert(
