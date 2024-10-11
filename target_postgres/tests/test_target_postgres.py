@@ -198,7 +198,7 @@ def test_port_config():
         "database": "postgres",
         "port": 5433,
     }
-    dialect_driver = config["dialect+driver"]
+    dialect_driver = "postgresql+psycopg"
     host = config["host"]
     user = config["user"]
     password = config["password"]
